@@ -1,0 +1,13 @@
+# Ignore dataset and heavy binary files
+data/
+outputs/checkpoints/
+
+# Ignore Python cached files and environments
+__pycache__/
+*.pyc
+.env
+reid_env/
+
+# Ignore IDE settings
+.vscode/
+.idea/
