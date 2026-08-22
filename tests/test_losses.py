@@ -1,5 +1,9 @@
-# test_losses.py
+import os
+import sys
 import torch
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.losses import TripletLoss, PCBLoss
 
 def test_triplet_loss():
