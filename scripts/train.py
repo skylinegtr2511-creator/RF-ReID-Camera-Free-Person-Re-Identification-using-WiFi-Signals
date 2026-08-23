@@ -36,7 +36,7 @@ def main():
     # Setup DataLoaders
     train_dir = os.path.join("data", "Wi-PER81Dataset", "ImageData", "D1")
     train_dataset = WiPER81TripletDataset(data_dir=train_dir)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
     
     val_gallery_dir = os.path.join("data", "Wi-PER81Dataset", "ImageData", "D2v", "Gallery")
     val_probe_dir = os.path.join("data", "Wi-PER81Dataset", "ImageData", "D2v", "Probe")
