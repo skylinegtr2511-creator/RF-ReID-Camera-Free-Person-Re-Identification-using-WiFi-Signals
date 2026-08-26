@@ -45,6 +45,7 @@ class TriNetModel(nn.Module):
             nn.Linear(in_features, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),  # <-- ADDED DROPOUT (50% probability)
             nn.Linear(512, embedding_dim)
         )
 
