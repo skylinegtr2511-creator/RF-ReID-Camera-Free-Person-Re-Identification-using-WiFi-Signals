@@ -45,7 +45,7 @@ class TriNetModel(nn.Module):
             nn.Linear(in_features, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),  # <-- ADDED DROPOUT (50% probability)
+            nn.Dropout(p=0.5),  
             nn.Linear(512, embedding_dim)
         )
 
@@ -127,7 +127,6 @@ class PCBModel(nn.Module):
 # =====================================================================
 # 3. DuATM (Dual-Attention Matching Network Module)
 # =====================================================================
-
 class SpatialChannelAttention(nn.Module):
     """Dual Attention block (Channel + Spatial Attention)"""
     def __init__(self, in_channels, reduction=16):
@@ -135,9 +134,9 @@ class SpatialChannelAttention(nn.Module):
         # Channel Attention
         self.channel_gate = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
-            nn.Conv2d(in_channels, in_channels // reduction, kernel_size=1),
+            nn.Conv2d(in_channels, max(1, in_channels // reduction), kernel_size=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(in_channels // reduction, in_channels, kernel_size=1),
+            nn.Conv2d(max(1, in_channels // reduction), in_channels, kernel_size=1),
             nn.Sigmoid()
         )
         # Spatial Attention
@@ -163,33 +162,51 @@ class SpatialChannelAttention(nn.Module):
 class DuATMModel(nn.Module):
     """
     Dual-Attention Matching Model for Re-ID.
-    Applies Spatial + Channel Attention before feature pooling.
+    Applies Spatial + Channel Attention before feature pooling across different backbones.
     """
-    def __init__(self, embedding_dim=128, pretrained=True):
+    def __init__(self, backbone_name='resnet50', embedding_dim=128, pretrained=True):
         super(DuATMModel, self).__init__()
-        weights = models.DenseNet121_Weights.DEFAULT if pretrained else None
-        base = models.densenet121(weights=weights)
+        self.backbone_name = backbone_name
         
-        self.features = base.features
-        in_channels = 1024
+        if backbone_name == 'resnet50':
+            weights = models.ResNet50_Weights.DEFAULT if pretrained else None
+            base = models.resnet50(weights=weights)
+            self.features = nn.Sequential(*list(base.children())[:-2])
+            in_channels = 2048
+            
+        elif backbone_name == 'efficientnet_v2_s':
+            weights = models.EfficientNet_V2_S_Weights.DEFAULT if pretrained else None
+            base = models.efficientnet_v2_s(weights=weights)
+            self.features = base.features
+            in_channels = 1280
+            
+        elif backbone_name == 'convnext_tiny':
+            weights = models.ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+            base = models.convnext_tiny(weights=weights)
+            self.features = base.features
+            in_channels = 768
+            
+        else:
+            raise ValueError(f"Unsupported backbone for DuATMModel: {backbone_name}")
         
         # Dual Attention Module
         self.attention = SpatialChannelAttention(in_channels)
         
-        # Output Embedding Layer
+        # Output Embedding Layer with Regularization (Dropout)
         self.embedding_head = nn.Sequential(
             nn.Linear(in_channels, 512),
             nn.BatchNorm1d(512),
             nn.ReLU(inplace=True),
+            nn.Dropout(p=0.5),  # Dropout added
             nn.Linear(512, embedding_dim)
         )
 
     def forward(self, x):
-        # 1. Base Conv Features
+        # 1. Extract 2D Base Conv Features (B, C, H, W)
         feat_map = self.features(x)
         # 2. Refine via Dual Attention
         attended_map = self.attention(feat_map)
-        # 3. Global Pooling
+        # 3. Global Adaptive Average Pooling
         pooled = F.adaptive_avg_pool2d(attended_map, (1, 1)).view(attended_map.size(0), -1)
         # 4. Project & L2 Normalize
         embeddings = self.embedding_head(pooled)

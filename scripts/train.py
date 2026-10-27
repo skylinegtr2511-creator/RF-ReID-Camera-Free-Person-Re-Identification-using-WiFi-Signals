@@ -10,14 +10,18 @@ import joblib
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.dataset import WiPER81TripletDataset, WiPER81EvalDataset
-from src.models import TriNetModel
+from src.models import TriNetModel, DuATMModel
 from src.losses import TripletLoss
 from src.train_utils import train_one_epoch, evaluate_loss, evaluate_model
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Re-ID Siamese Network on Wi-PER81")
-    parser.add_argument('--backbone', type=str, default='densenet121', 
-                        choices=['densenet121', 'mobilenet_v3', 'efficientnet_b0'])
+    parser.add_argument('--model_type', type=str, default='duatm', choices=['trinet', 'duatm'],
+                        help="Architecture type: trinet or duatm")
+    parser.add_argument('--backbone', type=str, default='resnet50', 
+                        choices=['densenet121', 'mobilenet_v3', 'efficientnet_b0', 
+                                 'resnet50', 'efficientnet_v2_s', 'convnext_tiny'],
+                        help="CNN backbone to use inside the model")
     parser.add_argument('--batch_size', type=int, default=32, help="Training batch size")
     parser.add_argument('--epochs', type=int, default=50, help="Max training epochs")
     parser.add_argument('--lr', type=float, default=0.0001, help="Learning rate")
@@ -30,9 +34,9 @@ def main():
     args = parse_args()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"--- Starting Training on {device.type.upper()} ---")
-    print(f"Model: {args.backbone} | Patience: {args.patience} | L2 Penalty: {args.weight_decay}")
+    print(f"Model Architecture: {args.model_type.upper()} | Backbone: {args.backbone}")
     
-    # DataLoaders (D1 for Train, D2v for Val)
+    # DataLoaders
     train_dir = os.path.join("data", "Wi-PER81Dataset", "ImageData", "D1")
     train_dataset = WiPER81TripletDataset(data_dir=train_dir)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
@@ -48,8 +52,14 @@ def main():
     val_gallery_loader = DataLoader(val_gallery_dataset, batch_size=32, shuffle=False)
     val_probe_loader = DataLoader(val_probe_dataset, batch_size=32, shuffle=False)
     
-    # Model, Loss, Optimizer (L2 Regularization is passed via weight_decay)
-    model = TriNetModel(backbone_name=args.backbone, embedding_dim=128).to(device)
+    # Initialize Architecture Selection
+    if args.model_type == 'duatm':
+        model = DuATMModel(backbone_name=args.backbone, embedding_dim=128).to(device)
+        model_tag = f"duatm_{args.backbone}"
+    else:
+        model = TriNetModel(backbone_name=args.backbone, embedding_dim=128).to(device)
+        model_tag = f"trinet_{args.backbone}"
+    
     criterion = TripletLoss(margin=args.margin)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
@@ -57,9 +67,8 @@ def main():
     os.makedirs(os.path.join("outputs", "logs"), exist_ok=True)
     
     history = {'train_loss': [], 'val_loss': [], 'val_mAP': [], 'val_rank1': [], 'val_rank5': []}
-    
     best_mAP = 0.0
-    epochs_no_improve = 0  # Early stopping counter
+    epochs_no_improve = 0
     
     for epoch in range(1, args.epochs + 1):
         print(f"\n[Epoch {epoch}/{args.epochs}]")
@@ -77,23 +86,22 @@ def main():
         history['val_rank1'].append(cmc[0])
         history['val_rank5'].append(cmc[4])
         
-        # Early Stopping Logic
         if mAP > best_mAP:
             best_mAP = mAP
-            epochs_no_improve = 0  # Reset counter
-            save_path = os.path.join("outputs", "checkpoints", f"best_model_{args.backbone}.pth")
+            epochs_no_improve = 0
+            save_path = os.path.join("outputs", "checkpoints", f"best_model_{model_tag}.pth")
             torch.save(model.state_dict(), save_path)
-            print(f"--> New best model saved! (mAP: {best_mAP:.4f})")
+            print(f"--> New best model saved to {save_path}! (mAP: {best_mAP:.4f})")
         else:
             epochs_no_improve += 1
             print(f"--> No improvement for {epochs_no_improve} epoch(s).")
             if epochs_no_improve >= args.patience:
-                print(f"\n[!] Early stopping triggered after {epoch} epochs due to no mAP improvement.")
+                print(f"\n[!] Early stopping triggered after {epoch} epochs.")
                 break
 
-    log_path = os.path.join("outputs", "logs", f"history_{args.backbone}.joblib")
+    log_path = os.path.join("outputs", "logs", f"history_{model_tag}.joblib")
     joblib.dump(history, log_path)
-    print(f"\nAll metrics successfully saved to {log_path}")
+    print(f"\nAll metrics saved to {log_path}")
 
 if __name__ == "__main__":
     import multiprocessing
