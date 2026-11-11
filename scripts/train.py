@@ -10,17 +10,15 @@ import joblib
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.dataset import WiPER81TripletDataset, WiPER81EvalDataset
-from src.models import TriNetModel, DuATMModel
+from src.models import TriNetModel
 from src.losses import TripletLoss
 from src.train_utils import train_one_epoch, evaluate_loss, evaluate_model
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Re-ID Siamese Network on Wi-PER81")
-    parser.add_argument('--model_type', type=str, default='duatm', choices=['trinet', 'duatm'],
-                        help="Architecture type: trinet or duatm")
-    parser.add_argument('--backbone', type=str, default='resnet50', 
+    parser.add_argument('--backbone', type=str, default='mobilenet_v4', 
                         choices=['densenet121', 'mobilenet_v3', 'efficientnet_b0', 
-                                 'resnet50', 'efficientnet_v2_s', 'convnext_tiny'],
+                                 'mobilenet_v4', 'efficientnet_v2_s', 'convnext_tiny'],
                         help="CNN backbone to use inside the model")
     parser.add_argument('--batch_size', type=int, default=32, help="Training batch size")
     parser.add_argument('--epochs', type=int, default=50, help="Max training epochs")
@@ -34,7 +32,7 @@ def main():
     args = parse_args()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"--- Starting Training on {device.type.upper()} ---")
-    print(f"Model Architecture: {args.model_type.upper()} | Backbone: {args.backbone}")
+    print(f"Model Architecture: TRINET | Backbone: {args.backbone}")
     
     # DataLoaders
     train_dir = os.path.join("data", "Wi-PER81Dataset", "ImageData", "D1")
@@ -52,13 +50,9 @@ def main():
     val_gallery_loader = DataLoader(val_gallery_dataset, batch_size=32, shuffle=False)
     val_probe_loader = DataLoader(val_probe_dataset, batch_size=32, shuffle=False)
     
-    # Initialize Architecture Selection
-    if args.model_type == 'duatm':
-        model = DuATMModel(backbone_name=args.backbone, embedding_dim=128).to(device)
-        model_tag = f"duatm_{args.backbone}"
-    else:
-        model = TriNetModel(backbone_name=args.backbone, embedding_dim=128).to(device)
-        model_tag = f"trinet_{args.backbone}"
+    # Initialize Architecture Selection (DuATM removed, fully migrated to modern TriNet)
+    model = TriNetModel(backbone_name=args.backbone, embedding_dim=128).to(device)
+    model_tag = f"trinet_{args.backbone}"
     
     criterion = TripletLoss(margin=args.margin)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
